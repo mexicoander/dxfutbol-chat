@@ -376,7 +376,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <input type="file" id="file-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip" style="position:fixed;left:-9999px" onchange="handleFile(event)">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
 <script>
-const SERVER_URL = '';
+const SERVER_URL = 'https://dxfutbol-chat.onrender.com';
 const ADMIN_PW='he-man***',ADMIN_NAME_DEFAULT='Demetrio';
 const RTC_CFG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},{urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}]};
 let socket=null,role=null,myId=null,myName=null,myKP=null,SK=null,activeUid=null,activeGuestName=null;
@@ -395,7 +395,7 @@ const impPub=s=>crypto.subtle.importKey('spki',ub64(s),{name:'ECDH',namedCurve:'
 const derAES=(a,b)=>crypto.subtle.deriveKey({name:'ECDH',public:b},a,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 const encMsg=async(key,pl)=>{const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(pl));return{iv:b64(iv),ct:b64(new Uint8Array(ct))};};
 const decMsg=(key,m)=>crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(m.iv)},key,ub64(m.ct)).then(b=>new TextDecoder().decode(b));
-const pwKey=async(pw,salt)=>{const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);};
+const pwKey=async(pw,salt)=>{const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:5000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);};
 const saveKey=async(priv,pw)=>{const jwk=await crypto.subtle.exportKey('jwk',priv);const salt=crypto.getRandomValues(new Uint8Array(16));const iv=crypto.getRandomValues(new Uint8Array(12));const ak=await pwKey(pw,salt);const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},ak,new TextEncoder().encode(JSON.stringify(jwk)));return{salt:b64(salt),iv:b64(iv),ct:b64(new Uint8Array(ct))};};
 const loadKey=async(s,pw)=>{const ak=await pwKey(pw,ub64(s.salt));const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(s.iv)},ak,ub64(s.ct));return crypto.subtle.importKey('jwk',JSON.parse(new TextDecoder().decode(p)),{name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);};
 function showScreen(id){document.querySelectorAll('.screen,.screen-scroll').forEach(e=>e.classList.remove('on'));document.getElementById(id).classList.add('on');}
@@ -409,8 +409,10 @@ function connectSocket(cb){
   if(socket&&socket.connected){cb();return;}
   document.getElementById('wait-txt').textContent='Despertando servidor... (puede tardar 30-60 seg la primera vez)';
   socket=io({transports:['polling','websocket'],reconnectionAttempts:Infinity,reconnectionDelay:2000});
+  let retryCount=0;
   socket.on('connect_error',(e)=>{
-    document.getElementById('wait-txt').textContent='Reintentando conexion... '+e.message;
+    retryCount++;
+    document.getElementById('wait-txt').textContent='Intento '+retryCount+'... despertando servidor (30-60s primera vez)';
     console.log('connect_error:',e.message);
   });
 
@@ -465,9 +467,21 @@ async function adminLogin(){
         localStorage.setItem('sc_admin_pub',pub);
       }
       document.getElementById('wait-txt').textContent='Abriendo inbox...';
-      const pub=localStorage.getItem('sc_admin_pub')||await expPub(myKP.publicKey);
+      let pub=localStorage.getItem('sc_admin_pub');
+      if(!pub){
+        try{ pub=await expPub(myKP.publicKey); }
+        catch{
+          // Key not extractable - regenerate completely
+          myKP=await genKP();
+          pub=await expPub(myKP.publicKey);
+          const enc2=await saveKey(myKP.privateKey,ADMIN_PW);
+          localStorage.setItem('sc_admin_enc',JSON.stringify(enc2));
+          localStorage.setItem('sc_admin_pub',pub);
+        }
+      }
       socket.emit('admin_connect',{pubkey:pub,name:adminName});
       role='admin';myId='admin';myName=adminName;
+      sessionStorage.setItem('sc_admin_ok','1');
       showScreen('inbox');refreshTags();
       requestPushPermission('admin');
     }catch(err){
@@ -646,9 +660,15 @@ function toggleSpk(){const rv=document.getElementById('rem-vid');rv.muted=!rv.mu
 async function requestPushPermission(uid){if(!('Notification'in window)||!('serviceWorker'in navigator))return;const perm=await Notification.requestPermission();if(perm!=='granted')return;try{const reg=await navigator.serviceWorker.ready;const res=await fetch('/vapid-public-key');const{key}=await res.json();const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});socket.emit('push_subscribe',{uid,subscription:sub.toJSON()});}catch(e){console.log('Push:',e);}}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(e=>console.log('SW:',e));
 function refreshTags(){const t=document.getElementById('pick-saved');t.innerHTML='';const uid=localStorage.getItem('sc_uid');if(uid&&localStorage.getItem('sc_uid_enc')){const n=localStorage.getItem('sc_uid_name')||'Usuario';const el=document.createElement('div');el.className='saved-tag';el.innerHTML='\u26bd Continuar como '+n;el.onclick=openGuest;t.appendChild(el);}}
-function lockAll(){if(socket){socket.disconnect();socket=null;}cancelAudio();endCallLocal();role=null;myId=null;myName=null;myKP=null;SK=null;activeUid=null;activeGuestName=null;adminSharedKeys={};msgKeys.clear();unreadCounts={};closePanel();closeGate();closeAttach();updateTitle(0);refreshTags();showScreen('pick');}
+function lockAll(){sessionStorage.removeItem('sc_admin_ok');if(socket){socket.disconnect();socket=null;}cancelAudio();endCallLocal();role=null;myId=null;myName=null;myKP=null;SK=null;activeUid=null;activeGuestName=null;adminSharedKeys={};msgKeys.clear();unreadCounts={};closePanel();closeGate();closeAttach();updateTitle(0);refreshTags();showScreen('pick');}
 function goBack(){lockAll();}
 refreshTags();
+// Keep Render server alive (free tier sleeps after 15 min)
+setInterval(()=>fetch('https://dxfutbol-chat.onrender.com/status').catch(()=>{}), 14*60*1000);
+// Auto-login admin if session active
+if(sessionStorage.getItem('sc_admin_ok')==='1'&&localStorage.getItem('sc_admin_enc')){
+  adminLogin();
+}
 </script>
 </body>
 </html>
