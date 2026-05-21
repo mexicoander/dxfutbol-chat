@@ -14,7 +14,7 @@ const io = new Server(server, {
 const cors = require('cors');
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// Frontend served from Vercel - no static files needed here
 
 // ── VAPID keys for Web Push ──────────────────────────────────
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC  || webpush.generateVAPIDKeys().publicKey;
@@ -229,9 +229,14 @@ io.on('connection', (socket) => {
   });
 });
 
-// ── Fallback to index.html for SPA ───────────────────────────
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// ── Status endpoint ──────────────────────────────────────────
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    app: 'dxFutbol Chat Server',
+    users: Object.keys(users).length,
+    uptime: Math.round(process.uptime()) + 's'
+  });
 });
 
 const PORT = process.env.PORT || 3000;
