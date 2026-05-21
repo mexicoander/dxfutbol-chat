@@ -1,0 +1,26 @@
+{
+  "name": "dxFutbol Chat",
+  "short_name": "dxFutbol",
+  "description": "Chat privado cifrado - World Cup 2026",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a2e00",
+  "theme_color": "#1a5c08",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["communication", "social"],
+  "lang": "es"
+}
